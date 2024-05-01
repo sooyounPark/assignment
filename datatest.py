@@ -24,7 +24,7 @@ y = data['HST_ORG_NM_encoded']
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
 # 모델 생성 및 학습
-model = RandomForestClassifier(n_estimators=100, random_state=42)
+model = RandomForestClassifier(n_estimators=300, random_state=42)
 model.fit(X_train, y_train)
 
 # 예제 근무지 선택 및 인코딩
