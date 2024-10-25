@@ -46,8 +46,8 @@ cnn_cls.compile(optimizer="rmsprop",
                 loss="sparse_categorical_crossentropy",
                 metrics=["accuracy"])
 
-# 3. Convolution Neural Network 분류기 학습 및 성능평가
-history = cnn_cls.fit(train_images, train_labels, epochs=10, batch_size=64)
+# 3.cc분류기 학습 및 성능평가
+history = cnn_cls.fit(train_images, train_labels, epochs=20, batch_size=64)
 test_loss, test_acc = cnn_cls.evaluate(test_images, test_labels)
 print(f"테스트 정확도: {test_acc:.3f}")
 print(f"테스트 Loss: {test_loss:.3f}")
