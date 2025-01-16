@@ -5,37 +5,14 @@ from sklearn.feature_extraction.text import CountVectorizer
 from sqlalchemy import create_engine
 import urllib
 import warnings
+import numpy as np
+from tensorflow.keras.models import load_model
+import os
+from beforeLearning import initialize_resources
 
 warnings.filterwarnings("ignore")
 
-# 데이터베이스 설정
-DB_USER = "secuware"
-DB_PASSWORD = urllib.parse.quote_plus("Secudb7700184!@#")
-DB_HOST = "db.secuware.co.kr"
-DB_PORT = "3306"
-DB_NAME = "pas_jn"
 
-DATABASE_URL = f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}?charset=utf8mb4"
-engine = create_engine(DATABASE_URL, pool_pre_ping=True)
-
-# 데이터 로드 함수
-def load_org_data():
-    query = """
-    SELECT ORG_ID, ORG_FL_NM, ORG_CD, ORG_PRNT_CD
-    FROM ptbl_org
-    """
-    org_data = pd.read_sql(query, engine)
-    print("[DEBUG] org_data 컬럼:", org_data.columns.tolist())
-    return org_data
-
-def load_history_data():
-    query = """
-    SELECT USER_ID, HST_ID, HST_ST_DT, HST_EDD_DT, HST_ORG_NM, HST_TYP
-    FROM ptbl_history
-    """
-    history_data = pd.read_sql(query, engine)
-    print("[DEBUG] history_data 컬럼:", history_data.columns.tolist())
-    return history_data
 
 
 # HST_TYP 추론 및 근무일수 계산
@@ -81,16 +58,16 @@ def train_and_infer_hst_typ(history_data):
     return history_data
 def unify_organization_history(history_data):
     """
-    상위 조직(ORG_PRNT_CD)을 기준으로 동일 조직 여부를 통합 처리
+    상위 조직(ORG_PRNT_ID)을 기준으로 동일 조직 여부를 통합 처리
     """
-    # 동일 조직 여부 확인: ORG_PRNT_CD 기준
+    # 동일 조직 여부 확인: ORG_PRNT_ID 기준
     history_data["UNIFIED_ORG"] = history_data.apply(
         lambda row: row["ORG_FL_NM_PARENT"] if pd.notnull(row["ORG_FL_NM_PARENT"]) else row["HST_ORG_NM"],
         axis=1
     )
 
     # 동일 조직 그룹화 처리
-    history_data["GROUPED_ORG"] = history_data.groupby("ORG_PRNT_CD")["UNIFIED_ORG"].transform("first")
+    history_data["GROUPED_ORG"] = history_data.groupby("ORG_PRNT_ID")["UNIFIED_ORG"].transform("first")
 
     return history_data
 # 관서/센터 추론 함수 (Random Forest)
@@ -99,11 +76,11 @@ def train_and_infer_hst_location_with_ml(history_data, org_data):
     print("[DEBUG] org_data 샘플 데이터 확인:")
     print(org_data.head())
 
-    # 병합된 데이터에서 ORG_PRNT_CD 유효성 확인
-    if history_data["ORG_PRNT_CD"].isna().any():
-        print("[ERROR] ORG_PRNT_CD가 없는 데이터가 있습니다.")
-        print(history_data[history_data["ORG_PRNT_CD"].isna()])
-        raise ValueError("ORG_PRNT_CD가 NaN인 데이터를 처리해야 합니다.")
+    # 병합된 데이터에서 ORG_PRNT_ID 유효성 확인
+    if history_data["ORG_PRNT_ID"].isna().any():
+        print("[ERROR] ORG_PRNT_ID 없는 데이터가 있습니다.")
+        print(history_data[history_data["ORG_PRNT_ID"].isna()])
+        raise ValueError("ORG_PRNT_ID NaN인 데이터를 처리해야 합니다.")
 
     # 라벨링된 데이터: ORG_FL_NM 기반
     labeled_data = org_data[pd.notnull(org_data["ORG_FL_NM"])]
@@ -163,7 +140,7 @@ def analyze_history_with_location(history_data, org_data, user_code, criterion):
 
     user_history = user_history.merge(
         org_data[["ORG_ID", "ORG_FL_NM"]],
-        left_on="ORG_PRNT_CD",
+        left_on="ORG_PRNT_ID",
         right_on="ORG_ID",
         how="left",
         suffixes=("", "_PARENT")
@@ -198,7 +175,7 @@ def analyze_history_with_location(history_data, org_data, user_code, criterion):
 
             # 관서인 경우: org_prnt_id 비교
             elif current_row["INFERRED_LOCATION"] == "관서":
-                if current_row["ORG_PRNT_CD"] != next_row["ORG_PRNT_CD"]:
+                if current_row["ORG_PRNT_ID"] != next_row["ORG_PRNT_ID"]:
                     labels[i] = "전 조직" if labels[i + 1] == "현 조직" else "전전 조직"
                 else:
                     labels[i] = labels[i + 1]  # 동일하면 레이블 유지
@@ -208,7 +185,7 @@ def analyze_history_with_location(history_data, org_data, user_code, criterion):
 
         return labels
 
-    user_history["구분"] = assign_labels(user_history)
+    user_history["구분"] = assign_labels_by_org(user_history)
     user_history["이동"] = user_history["HST_ORG_NM"].shift(1) + " → " + user_history["HST_ORG_NM"]
     user_history["이동"] = user_history["이동"].fillna("초기 조직")
 
@@ -239,7 +216,7 @@ def train_and_infer_hst_location_with_rules(history_data, org_data):
     """
     # 1. HST_ORG_NM → ORG_ID 매핑
     history_data = history_data.merge(
-        org_data[["ORG_ID", "ORG_FL_NM", "ORG_PRNT_CD"]],
+        org_data[["ORG_ID", "ORG_FL_NM", "ORG_PRNT_ID"]],
         left_on="HST_ORG_NM",
         right_on="ORG_FL_NM",
         how="left"
@@ -248,14 +225,14 @@ def train_and_infer_hst_location_with_rules(history_data, org_data):
     # 2. 상위 조직 매칭
     history_data = history_data.merge(
         org_data[["ORG_ID", "ORG_FL_NM", "ORG_TYP", "ORG_PRNT_YN"]],
-        left_on="ORG_PRNT_CD",
+        left_on="ORG_PRNT_ID",
         right_on="ORG_ID",
         how="left",
         suffixes=("", "_PARENT")
     )
 
     print("[DEBUG] 상위 조직 매칭 결과:")
-    print(history_data[["ORG_ID", "ORG_FL_NM", "ORG_PRNT_CD", "ORG_FL_NM_PARENT", "ORG_TYP", "ORG_TYP_PARENT"]].drop_duplicates())
+    print(history_data[["ORG_ID", "ORG_FL_NM", "ORG_PRNT_ID", "ORG_FL_NM_PARENT", "ORG_TYP", "ORG_TYP_PARENT"]].drop_duplicates())
 
     # 3. 관서/센터 분류
     def infer_location(row):
@@ -292,7 +269,7 @@ def redefine_grouped_organization_labels(history_data):
     return history_data
 def fill_missing_org_prnt_cd(history_data, org_data):
     """
-    ORG_PRNT_CD가 NaN인 데이터를 추론하여 채웁니다.
+    ORG_PRNT_ID NaN인 데이터를 추론하여 채웁니다.
     """
     # Vectorizer 초기화 및 org_data 벡터화
     vectorizer = CountVectorizer()
@@ -320,7 +297,7 @@ def fill_missing_org_prnt_cd(history_data, org_data):
 
         # 임계값(0.7) 이상인 경우 매칭
         if max_similarity >= 0.7 and not matched_org.empty:
-            return matched_org["ORG_PRNT_CD"]
+            return matched_org["ORG_PRNT_ID"]
 
         # HST_ORG_NM이 "소방서"를 포함하면 관서로 추정
         elif "소방서" in row["HST_ORG_NM"]:
@@ -332,24 +309,24 @@ def fill_missing_org_prnt_cd(history_data, org_data):
         return None
 
     def debug_infer_org_prnt_cd(row):
-        print(f"[DEBUG] 현재 처리 중인 row의 ORG_PRNT_CD: {row['ORG_PRNT_CD']}")
-        print(f"[DEBUG] pd.isna(row['ORG_PRNT_CD']): {pd.isna(row['ORG_PRNT_CD'])}")
-        print(f"[DEBUG] row['ORG_PRNT_CD'] == None: {row['ORG_PRNT_CD'] is None}")
+        print(f"[DEBUG] 현재 처리 중인 row의 ORG_PRNT_ID: {row['ORG_PRNT_ID']}")
+        print(f"[DEBUG] pd.isna(row['ORG_PRNT_ID']): {pd.isna(row['ORG_PRNT_ID'])}")
+        print(f"[DEBUG] row['ORG_PRNT_ID'] == None: {row['ORG_PRNT_ID'] is None}")
         return infer_org_prnt_cd(row)
 
-    history_data["INFERRED_ORG_PRNT_CD"] = history_data.apply(
-        lambda row: debug_infer_org_prnt_cd(row) if pd.isna(row["ORG_PRNT_CD"]) else row["ORG_PRNT_CD"],
+    history_data["INFERRED_ORG_PRNT_ID"] = history_data.apply(
+        lambda row: debug_infer_org_prnt_cd(row) if pd.isna(row["ORG_PRNT_ID"]) else row["ORG_PRNT_ID"],
         axis=1
     )
 
     # NaN 값 확인
-    print("[DEBUG] 추론된 ORG_PRNT_CD 결과:")
-    print(history_data[history_data["INFERRED_ORG_PRNT_CD"].isna()])
-    print(history_data[history_data["ORG_PRNT_CD"].isna()])
+    print("[DEBUG] 추론된 ORG_PRNT_ID 결과:")
+    print(history_data[history_data["INFERRED_ORG_PRNT_ID"].isna()])
+    print(history_data[history_data["ORG_PRNT_ID"].isna()])
 
     # NaN 값을 기본값(1)로 채움
-    history_data["ORG_PRNT_CD"] = history_data["INFERRED_ORG_PRNT_CD"].fillna("1")
-    history_data.drop(columns=["INFERRED_ORG_PRNT_CD"], inplace=True)
+    history_data["ORG_PRNT_ID"] = history_data["INFERRED_ORG_PRNT_ID"].fillna("1")
+    history_data.drop(columns=["INFERRED_ORG_PRNT_ID"], inplace=True)
 
     return history_data
 def fill_missing_org_id(history_data, org_data):
@@ -430,8 +407,8 @@ def unify_organization_history(history_data):
     history_data["UNIFIED_ORG"] = history_data.apply(determine_unified_org, axis=1)
 
     # GROUPED_ORG 생성: ORG_PRNT_CD가 존재하지 않으면 NaN 처리 방지
-    if "ORG_PRNT_CD" in history_data.columns:
-        history_data["GROUPED_ORG"] = history_data.groupby("ORG_PRNT_CD")["UNIFIED_ORG"].transform("first")
+    if "ORG_PRNT_ID" in history_data.columns:
+        history_data["GROUPED_ORG"] = history_data.groupby("ORG_PRNT_ID")["UNIFIED_ORG"].transform("first")
     else:
         history_data["GROUPED_ORG"] = history_data["UNIFIED_ORG"]
 
@@ -478,11 +455,21 @@ def fill_missing_org_id_and_name(history_data, org_data):
 
     return history_data
 
+
 if __name__ == "__main__":
     try:
-        print("데이터를 로드 중입니다...")
-        history_data = load_history_data()
-        org_data = load_org_data()
+        print("[INFO] 데이터를 로드 중입니다...")
+
+        # 데이터 로드 및 사전 처리
+        org_data, history_data, user_data, label_encoder, vectorizer = initialize_resources()
+
+        print("[INFO] 데이터 로드 완료!")
+        print("조직 데이터 예시:")
+        print(org_data.head())
+        print("이력 데이터 예시:")
+        print(history_data.head())
+        print("사용자 데이터 예시:")
+        print(user_data.head())
 
         # 디지털 코드와 기준 입력
         user_code = input("디지털 코드를 입력하세요 (USER_ID): ").strip()
@@ -498,7 +485,7 @@ if __name__ == "__main__":
         # 병합 작업
         print("병합 작업 중입니다...")
         user_history = user_history.merge(
-            org_data[["ORG_ID", "ORG_FL_NM", "ORG_PRNT_CD"]],
+            org_data[["ORG_ID", "ORG_FL_NM", "ORG_PRNT_ID"]],
             left_on="HST_ORG_NM",
             right_on="ORG_FL_NM",
             how="left"
@@ -509,9 +496,9 @@ if __name__ == "__main__":
             print("[INFO] ORG_ID 또는 ORG_FL_NM이 없는 데이터를 처리 중...")
             user_history = fill_missing_org_id_and_name(user_history, org_data)
 
-        # ORG_PRNT_CD 없는 데이터 처리
-        if user_history["ORG_PRNT_CD"].isna().any():
-            print("[ERROR] ORG_PRNT_CD가 없는 데이터가 있습니다. 추론 중입니다...")
+        # ORG_PRNT_ID 없는 데이터 처리
+        if user_history["ORG_PRNT_ID"].isna().any():
+            print("[ERROR] ORG_PRNT_ID 없는 데이터가 있습니다. 추론 중입니다...")
             user_history = fill_missing_org_prnt_cd(user_history, org_data)
 
         # TEMP_ORG_ID가 있는 데이터 확인
@@ -520,12 +507,10 @@ if __name__ == "__main__":
             print("[WARNING] 일부 데이터의 ORG_ID가 'TEMP_ORG_ID'로 설정되었습니다. 확인이 필요합니다.")
             print(temp_org_data)
 
-
-
         # 상위 조직 병합
         user_history = user_history.merge(
             org_data[["ORG_ID", "ORG_FL_NM"]],
-            left_on="ORG_PRNT_CD",
+            left_on="ORG_PRNT_ID",
             right_on="ORG_ID",
             how="left",
             suffixes=("", "_PARENT")
@@ -552,7 +537,6 @@ if __name__ == "__main__":
         user_history = redefine_grouped_organization_labels(user_history)
         print("구분 값 재정의 완료.\n")
 
-
         # 기준별 이력 분석
         result = analyze_history_with_location(user_history, org_data, user_code, criterion)
         if result is not None:
@@ -565,6 +549,14 @@ if __name__ == "__main__":
 
             # 결과 저장
             output_filename = f"analyzed_history_{user_code}_{criterion}.xlsx"
+
+            # 파일 존재 여부 확인 및 덮어쓰기 처리
+            if os.path.exists(output_filename):
+                print(f"[INFO] '{output_filename}' 파일이 이미 존재합니다. 덮어쓰기 진행 중...")
+            else:
+                print(f"[INFO] '{output_filename}' 파일을 새로 생성합니다.")
+
+            # 엑셀 파일 저장
             result.to_excel(output_filename, index=False)
             print(f"\n결과가 '{output_filename}' 파일로 저장되었습니다.")
     except Exception as e:
