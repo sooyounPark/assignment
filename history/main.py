@@ -112,7 +112,7 @@ def train_and_infer_hst_location_with_ml(history_data, org_data):
     history_data = pd.concat([labeled_data, unlabeled_data], axis=0)
     return history_data
 # 이력 분석 함수
-def analyze_history_with_location(history_data, org_data, user_code, criterion):
+def analyze_history_with_location(history_data, org_data, user_code):
     user_history = history_data[history_data["USER_ID"] == user_code].copy()
     if user_history.empty:
         print(f"사용자 코드 '{user_code}'에 대한 이력이 없습니다.")
@@ -121,18 +121,6 @@ def analyze_history_with_location(history_data, org_data, user_code, criterion):
     user_history = user_history[user_history["INFERRED_HST_TYP"] == "포함"]
     if user_history.empty:
         print(f"'{user_code}' 사용자의 유효한 근무 이력이 없습니다.")
-        return None
-
-    if criterion == "관서":
-        user_history = user_history[user_history["INFERRED_LOCATION"] == "관서"]
-    elif criterion == "센터":
-        user_history = user_history[user_history["INFERRED_LOCATION"].str.contains("센터", na=False)]
-    else:
-        print(f"잘못된 기준: {criterion}. '관서' 또는 '센터' 중 하나를 선택하세요.")
-        return None
-
-    if user_history.empty:
-        print(f"'{criterion}' 기준의 데이터가 없습니다.")
         return None
 
     user_history = user_history.sort_values(by="HST_ST_DT").reset_index(drop=True)
@@ -297,12 +285,13 @@ def fill_missing_org_prnt_cd(history_data, org_data):
 
         # 임계값(0.7) 이상인 경우 매칭
         if max_similarity >= 0.7 and not matched_org.empty:
-            return matched_org["ORG_PRNT_ID"]
+            if matched_org["ORG_PRNT_ID"] == "1":
+                return matched_org["ORG_ID"]
+            else:
+                return matched_org["ORG_PRNT_ID"]
 
-        # HST_ORG_NM이 "소방서"를 포함하면 관서로 추정
-        elif "소방서" in row["HST_ORG_NM"]:
-            print("[DEBUG] '소방서'가 포함되어 관서로 추정.")
-            return "1"  # 관서로 간주
+
+
 
         # 추론 불가한 경우
         print("[DEBUG] 추론 불가.")
@@ -473,7 +462,6 @@ if __name__ == "__main__":
 
         # 디지털 코드와 기준 입력
         user_code = input("디지털 코드를 입력하세요 (USER_ID): ").strip()
-        criterion = input("기준을 선택하세요 ('관서' 또는 '센터'): ").strip()
 
         # 사용자 데이터 필터링
         print("사용자 데이터 필터링 중입니다...")
@@ -489,6 +477,12 @@ if __name__ == "__main__":
             left_on="HST_ORG_NM",
             right_on="ORG_FL_NM",
             how="left"
+        )
+
+        # ORG_PRNT_ID가 '1'인 경우 ORG_ID로 값 설정
+        user_history["ORG_PRNT_ID"] = user_history.apply(
+            lambda row: row["ORG_ID"] if row["ORG_PRNT_ID"] == "1" else row["ORG_PRNT_ID"],
+            axis=1
         )
 
         # ORG_ID 및 ORG_FL_NM 없는 데이터 처리
@@ -538,7 +532,7 @@ if __name__ == "__main__":
         print("구분 값 재정의 완료.\n")
 
         # 기준별 이력 분석
-        result = analyze_history_with_location(user_history, org_data, user_code, criterion)
+        result = analyze_history_with_location(user_history, org_data, user_code)
         if result is not None:
             print("\n사용자 이력 분석 결과:")
             print(result[[
@@ -548,7 +542,7 @@ if __name__ == "__main__":
             ]])
 
             # 결과 저장
-            output_filename = f"analyzed_history_{user_code}_{criterion}.xlsx"
+            output_filename = f"analyzed_history_{user_code}.xlsx"
 
             # 파일 존재 여부 확인 및 덮어쓰기 처리
             if os.path.exists(output_filename):
