@@ -445,6 +445,8 @@ def fill_missing_org_id_and_name(history_data, org_data):
     return history_data
 
 
+import random
+
 if __name__ == "__main__":
     try:
         print("[INFO] 데이터를 로드 중입니다...")
@@ -460,98 +462,122 @@ if __name__ == "__main__":
         print("사용자 데이터 예시:")
         print(user_data.head())
 
-        # 디지털 코드와 기준 입력
-        user_code = input("디지털 코드를 입력하세요 (USER_ID): ").strip()
+        # 사용자 선택 옵션
+        print("사용자 선택 옵션:")
+        print("1. 특정 사용자 입력")
+        print("2. 랜덤 사용자 10명 분석")
+        user_choice = input("옵션을 선택하세요 (1 또는 2): ").strip()
 
-        # 사용자 데이터 필터링
-        print("사용자 데이터 필터링 중입니다...")
-        user_history = history_data[history_data["USER_ID"] == user_code]
-        if user_history.empty:
-            print(f"사용자 코드 '{user_code}'에 대한 이력이 없습니다.")
+        # 사용자 코드 리스트 생성
+        user_ids = user_data["USER_ID"].unique().tolist()
+
+        if user_choice == "1":
+            # 특정 사용자 입력
+            user_code = input("디지털 코드를 입력하세요 (USER_ID): ").strip()
+            selected_users = [user_code]
+
+        elif user_choice == "2":
+            # 랜덤 사용자 10명 선택
+            selected_users = random.sample(user_ids, min(10, len(user_ids)))
+            print(f"랜덤으로 선택된 사용자 목록: {selected_users}")
+
+        else:
+            print("잘못된 옵션입니다. 프로그램을 종료합니다.")
             exit()
 
-        # 병합 작업
-        print("병합 작업 중입니다...")
-        user_history = user_history.merge(
-            org_data[["ORG_ID", "ORG_FL_NM", "ORG_PRNT_ID"]],
-            left_on="HST_ORG_NM",
-            right_on="ORG_FL_NM",
-            how="left"
-        )
+        # 각 사용자에 대해 분석 실행
+        for user_code in selected_users:
+            print(f"\n[INFO] 사용자 '{user_code}' 분석 중...")
 
-        # ORG_PRNT_ID가 '1'인 경우 ORG_ID로 값 설정
-        user_history["ORG_PRNT_ID"] = user_history.apply(
-            lambda row: row["ORG_ID"] if row["ORG_PRNT_ID"] == "1" else row["ORG_PRNT_ID"],
-            axis=1
-        )
+            # 사용자 데이터 필터링
+            print("사용자 데이터 필터링 중입니다...")
+            user_history = history_data[history_data["USER_ID"] == user_code]
+            if user_history.empty:
+                print(f"사용자 코드 '{user_code}'에 대한 이력이 없습니다.")
+                continue
 
-        # ORG_ID 및 ORG_FL_NM 없는 데이터 처리
-        if user_history["ORG_ID"].isna().any() or user_history["ORG_FL_NM"].isna().any():
-            print("[INFO] ORG_ID 또는 ORG_FL_NM이 없는 데이터를 처리 중...")
-            user_history = fill_missing_org_id_and_name(user_history, org_data)
+            # 병합 작업
+            print("병합 작업 중입니다...")
+            user_history = user_history.merge(
+                org_data[["ORG_ID", "ORG_FL_NM", "ORG_PRNT_ID"]],
+                left_on="HST_ORG_NM",
+                right_on="ORG_FL_NM",
+                how="left"
+            )
 
-        # ORG_PRNT_ID 없는 데이터 처리
-        if user_history["ORG_PRNT_ID"].isna().any():
-            print("[ERROR] ORG_PRNT_ID 없는 데이터가 있습니다. 추론 중입니다...")
-            user_history = fill_missing_org_prnt_cd(user_history, org_data)
+            # ORG_PRNT_ID가 '1'인 경우 ORG_ID로 값 설정
+            user_history["ORG_PRNT_ID"] = user_history.apply(
+                lambda row: row["ORG_ID"] if row["ORG_PRNT_ID"] == "1" else row["ORG_PRNT_ID"],
+                axis=1
+            )
 
-        # TEMP_ORG_ID가 있는 데이터 확인
-        temp_org_data = user_history[user_history["ORG_ID"] == "TEMP_ORG_ID"]
-        if not temp_org_data.empty:
-            print("[WARNING] 일부 데이터의 ORG_ID가 'TEMP_ORG_ID'로 설정되었습니다. 확인이 필요합니다.")
-            print(temp_org_data)
+            # ORG_ID 및 ORG_FL_NM 없는 데이터 처리
+            if user_history["ORG_ID"].isna().any() or user_history["ORG_FL_NM"].isna().any():
+                print("[INFO] ORG_ID 또는 ORG_FL_NM이 없는 데이터를 처리 중...")
+                user_history = fill_missing_org_id_and_name(user_history, org_data)
 
-        # 상위 조직 병합
-        user_history = user_history.merge(
-            org_data[["ORG_ID", "ORG_FL_NM"]],
-            left_on="ORG_PRNT_ID",
-            right_on="ORG_ID",
-            how="left",
-            suffixes=("", "_PARENT")
-        )
+            # ORG_PRNT_ID 없는 데이터 처리
+            if user_history["ORG_PRNT_ID"].isna().any():
+                print("[ERROR] ORG_PRNT_ID 없는 데이터가 있습니다. 추론 중입니다...")
+                user_history = fill_missing_org_prnt_cd(user_history, org_data)
 
-        # 정렬 및 추론 로직 실행
-        print("이력 정렬 중입니다...")
-        user_history = reorder_history_by_org(user_history)
-        print("이력 정렬 완료.\n")
+            # TEMP_ORG_ID가 있는 데이터 확인
+            temp_org_data = user_history[user_history["ORG_ID"] == "TEMP_ORG_ID"]
+            if not temp_org_data.empty:
+                print("[WARNING] 일부 데이터의 ORG_ID가 'TEMP_ORG_ID'로 설정되었습니다. 확인이 필요합니다.")
+                print(temp_org_data)
 
-        print("조직 통합 처리 중입니다...")
-        user_history = unify_organization_history(user_history)
-        print("조직 통합 처리 완료.\n")
+            # 상위 조직 병합
+            user_history = user_history.merge(
+                org_data[["ORG_ID", "ORG_FL_NM"]],
+                left_on="ORG_PRNT_ID",
+                right_on="ORG_ID",
+                how="left",
+                suffixes=("", "_PARENT")
+            )
 
-        print("관서/센터 추론 중입니다...")
-        user_history = train_and_infer_hst_location_with_ml(user_history, org_data)
-        print("관서/센터 추론 완료.\n")
+            # 정렬 및 추론 로직 실행
+            print("이력 정렬 중입니다...")
+            user_history = reorder_history_by_org(user_history)
+            print("이력 정렬 완료.\n")
 
-        print("HST_TYP 추론 중입니다...")
-        user_history = train_and_infer_hst_typ(user_history)
-        print("HST_TYP 추론 완료.\n")
+            print("조직 통합 처리 중입니다...")
+            user_history = unify_organization_history(user_history)
+            print("조직 통합 처리 완료.\n")
 
-        print("구분 값 재정의 중입니다...")
-        user_history = redefine_grouped_organization_labels(user_history)
-        print("구분 값 재정의 완료.\n")
+            print("관서/센터 추론 중입니다...")
+            user_history = train_and_infer_hst_location_with_ml(user_history, org_data)
+            print("관서/센터 추론 완료.\n")
 
-        # 기준별 이력 분석
-        result = analyze_history_with_location(user_history, org_data, user_code)
-        if result is not None:
-            print("\n사용자 이력 분석 결과:")
-            print(result[[
-                "구분", "HST_ST_DT", "HST_EDD_DT", "HST_ORG_NM", "ORG_FL_NM_PARENT",
-                "ORG_ID_PARENT", "INFERRED_LOCATION", "INFERRED_HST_TYP",
-                "근무일수", "제외 근무일수", "이동", "GROUPED_ORG"
-            ]])
+            print("HST_TYP 추론 중입니다...")
+            user_history = train_and_infer_hst_typ(user_history)
+            print("HST_TYP 추론 완료.\n")
 
-            # 결과 저장
-            output_filename = f"analyzed_history_{user_code}.xlsx"
+            print("구분 값 재정의 중입니다...")
+            user_history = redefine_grouped_organization_labels(user_history)
+            print("구분 값 재정의 완료.\n")
 
-            # 파일 존재 여부 확인 및 덮어쓰기 처리
-            if os.path.exists(output_filename):
-                print(f"[INFO] '{output_filename}' 파일이 이미 존재합니다. 덮어쓰기 진행 중...")
-            else:
-                print(f"[INFO] '{output_filename}' 파일을 새로 생성합니다.")
+            # 기준별 이력 분석
+            result = analyze_history_with_location(user_history, org_data, user_code)
+            if result is not None:
+                print(f"\n[INFO] 사용자 '{user_code}' 이력 분석 결과:")
+                print(result[[
+                    "구분", "HST_ST_DT", "HST_EDD_DT", "HST_ORG_NM", "ORG_FL_NM_PARENT",
+                    "ORG_ID_PARENT", "INFERRED_LOCATION", "INFERRED_HST_TYP",
+                    "근무일수", "제외 근무일수", "이동", "GROUPED_ORG"
+                ]])
 
-            # 엑셀 파일 저장
-            result.to_excel(output_filename, index=False)
-            print(f"\n결과가 '{output_filename}' 파일로 저장되었습니다.")
+                # 결과 저장
+                output_filename = f"analyzed_history_{user_code}.xlsx"
+
+                # 파일 존재 여부 확인 및 덮어쓰기 처리
+                if os.path.exists(output_filename):
+                    print(f"[INFO] '{output_filename}' 파일이 이미 존재합니다. 덮어쓰기 진행 중...")
+                else:
+                    print(f"[INFO] '{output_filename}' 파일을 새로 생성합니다.")
+
+                # 엑셀 파일 저장
+                result.to_excel(output_filename, index=False)
+                print(f"\n결과가 '{output_filename}' 파일로 저장되었습니다.")
     except Exception as e:
         print(f"오류 발생: {e}")
