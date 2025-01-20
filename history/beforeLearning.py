@@ -10,7 +10,7 @@ DB_USER = "secuware"
 DB_PASSWORD = urllib.parse.quote_plus("Secudb7700184!@#")
 DB_HOST = "db.secuware.co.kr"
 DB_PORT = "3306"
-DB_NAME = "pas_jn"
+DB_NAME = "pas_test202250120"
 
 DATABASE_URL = f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}?charset=utf8mb4"
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
