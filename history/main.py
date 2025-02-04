@@ -8,7 +8,7 @@ import warnings
 import numpy as np
 from tensorflow.keras.models import load_model
 import os
-from beforeLearning import initialize_resources
+from loadData import initialize_resources
 
 warnings.filterwarnings("ignore")
 
