@@ -23,6 +23,57 @@ from deepTagger import predict_prefix_tag  # 앞단어 추론 함수 호출
 
 okt = Okt()
 
+
+import matplotlib.pyplot as plt
+import seaborn as sns
+import matplotlib.pyplot as plt
+import matplotlib.font_manager as fm
+import platform
+
+
+def visualize_mlp_results(result_df):
+    # 한글 폰트 설정
+    if platform.system() == 'Darwin':  # macOS
+        plt.rcParams['font.family'] = 'AppleGothic'
+    elif platform.system() == 'Windows':
+        plt.rcParams['font.family'] = 'Malgun Gothic'
+    else:  # Linux
+        plt.rcParams['font.family'] = 'NanumGothic'
+
+    # 마이너스 깨짐 방지
+    plt.rcParams['axes.unicode_minus'] = False
+    # [1] 사용자별 정확도
+    plt.figure(figsize=(10, 6))
+    sns.barplot(data=result_df, x='user_id', y='accuracy', palette='Blues_d')
+    plt.title('사용자별 정확도 비교 (MLP)', fontsize=14)
+    plt.xticks(rotation=45)
+    plt.ylabel('Accuracy')
+    plt.tight_layout()
+    plt.savefig("user_accuracy_barplot.png")
+    plt.close()
+
+    # [2] 클래스별 f1-score 비교 (ORG vs DEPT)
+    plt.figure(figsize=(8, 6))
+    class_f1_data = result_df[["org_f1", "dept_f1"]].mean().reset_index()
+    class_f1_data.columns = ["class", "f1_score"]
+    sns.barplot(data=class_f1_data, x="class", y="f1_score", palette="pastel")
+    plt.title("클래스별 F1-score 평균 (ORG vs DEPT)", fontsize=14)
+    plt.ylim(0, 1)
+    plt.tight_layout()
+    plt.savefig("class_f1_score_comparison.png")
+    plt.close()
+
+    # [3] macro vs weighted F1-score 비교
+    plt.figure(figsize=(8, 6))
+    avg_f1_data = result_df[["macro_f1", "weighted_f1"]].mean().reset_index()
+    avg_f1_data.columns = ["f1_type", "score"]
+    sns.barplot(data=avg_f1_data, x="f1_type", y="score", palette="Set2")
+    plt.title("평균 F1-score 비교: Macro vs Weighted", fontsize=14)
+    plt.ylim(0, 1)
+    plt.tight_layout()
+    plt.savefig("f1_score_comparison.png")
+    plt.close()
+
 def tokenize(text):
     return ['/'.join(t) for t in okt.pos(text)]
 
@@ -225,6 +276,8 @@ def main():
         result_df.to_csv("mlp_test_result.csv", index=False, encoding="utf-8-sig")
         all_result_df = pd.concat(all_dfs, ignore_index=True)
         all_result_df.to_csv("all_user_result_detail.csv", index=False, encoding="utf-8-sig")
+
+        visualize_mlp_results(result_df)
 
         print("\n✅ 결과 저장 완료.")
     except Exception as e:
