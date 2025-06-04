@@ -134,15 +134,17 @@ def train_model():
     texts = df['ORG_FL_NM'].tolist()
     emb = get_bert_embeddings(texts)
 
-    X_train, _, y_train, _ = train_test_split(emb, df['label'].values, test_size=0.2, stratify=df['label'], random_state=42)
-    X_train = torch.tensor(X_train, dtype=torch.float32).to(device)
-    y_train = torch.tensor(y_train, dtype=torch.long).to(device)
+    # X_train, _, y_train, _ = train_test_split(emb, df['label'].values, test_size=0.2, stratify=df['label'], random_state=42)
+    # X_train = torch.tensor(X_train, dtype=torch.float32).to(device)
+    # y_train = torch.tensor(y_train, dtype=torch.long).to(device)
+    X_train = torch.tensor(emb, dtype=torch.float32).to(device)
+    y_train = torch.tensor(df['label'].values, dtype=torch.long).to(device)
 
     model = BERT_MLP().to(device)
     optimizer = optim.Adam(model.parameters(), lr=1e-4)
     criterion = nn.CrossEntropyLoss()
 
-    for epoch in range(10):
+    for epoch in range(200):
         model.train()
         optimizer.zero_grad()
         loss = criterion(model(X_train), y_train)

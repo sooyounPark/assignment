@@ -174,7 +174,7 @@ def train_classifier():
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=0.001)
 
-    for epoch in range(30):
+    for epoch in range(200):
         model.train()
         optimizer.zero_grad()
         outputs = model(X_train_tensor)
