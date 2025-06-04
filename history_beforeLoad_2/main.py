@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import numpy as np
+import re
 import random
 import os
 import glob
@@ -44,7 +45,17 @@ class BERT_MLP(nn.Module):
     def forward(self, x):
         return self.model(x)
 
-
+def rule_org_for_sobang_bonbu(name):
+    # "소방본부"로 끝나면 ORG
+    if re.search(r'소방.*본부$', name):
+        return "ORG"
+    # "소방서"로 끝나면 ORG
+    elif re.search(r'소방서$', name):
+        return "ORG"
+    # "소방서 119" 등으로 이어지면 DEPT
+    elif re.search(r'소방서\s+119', name):
+        return "DEPT"
+    return None
 def preprocess_org_df(df):
     df = df[df['ORG_TYP'].isin(['ORG', 'DEPT'])].copy()
     df['ORG_FL_NM'] = df['ORG_FL_NM'].fillna('').str.strip()
@@ -60,6 +71,10 @@ def preprocess_org_df(df):
         return name
 
     df['ORG_FL_NM'] = df['ORG_FL_NM'].apply(guess_prefix)
+    df['rule_guess'] = df['ORG_FL_NM'].apply(rule_org_for_sobang_bonbu)
+    df['ORG_TYP'] = df.apply(lambda row: row['rule_guess'] if pd.notnull(row['rule_guess']) else row['ORG_TYP'], axis=1)
+    df.drop(columns=['rule_guess'], inplace=True)
+
     return df
 
 
