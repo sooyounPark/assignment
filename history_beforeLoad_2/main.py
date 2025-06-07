@@ -177,6 +177,9 @@ def evaluate_test_users(model, le, test_user_ids):
         acc = accuracy_score(y_tensor.cpu().numpy(), y_pred)
         report = classification_report(y_tensor.cpu().numpy(), y_pred, target_names=le.classes_, output_dict=True)
 
+        print(f"[{uid}] 평가 결과:")
+        print(classification_report(y_tensor.cpu().numpy(), y_pred, target_names=le.classes_))
+
         df["predicted_prefix"] = df["ORG_FL_NM"].apply(predict_prefix_tag)
         df["ORG_FL_NM_보정"] = df.apply(lambda row: f"{row['predicted_prefix']} {row['ORG_FL_NM']}"
                                           if not row['ORG_FL_NM'].startswith(row['predicted_prefix']) else row['ORG_FL_NM'], axis=1)
