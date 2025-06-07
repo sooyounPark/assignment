@@ -213,6 +213,8 @@ def test_classifier(model, vectorizer, le, user_id):
 
     acc = accuracy_score(y, y_pred)
     report = classification_report(y, y_pred, target_names=le.classes_, output_dict=True, zero_division=0)
+    print(f"[{user_id}] 평가 결과:")
+    print(classification_report(y, y_pred, target_names=le.classes_))
 
     results_df = pd.DataFrame({
         "user_id": [user_id] * len(org_df),
