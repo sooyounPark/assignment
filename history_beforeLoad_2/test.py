@@ -14,8 +14,8 @@ warnings.filterwarnings("ignore")
 
 # 데이터베이스 설정
 DB_USER = "secuware"
-DB_PASSWORD = urllib.parse.quote_plus("Secudb7700184!@#")
-DB_HOST = "db.secuware.co.kr"
+DB_PASSWORD = urllib.parse.quote_plus("Secudb7700184!@")
+DB_HOST = "localhost"
 DB_PORT = "3306"
 DB_NAME = "pas_jn"
 
