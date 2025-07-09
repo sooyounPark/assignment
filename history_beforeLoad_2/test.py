@@ -13,11 +13,11 @@ import warnings
 warnings.filterwarnings("ignore")
 
 # 데이터베이스 설정
-DB_USER = "secuware"
-DB_PASSWORD = urllib.parse.quote_plus("Secudb7700184!@")
+DB_USER = "root"
+DB_PASSWORD = urllib.parse.quote_plus("root")
 DB_HOST = "localhost"
 DB_PORT = "3306"
-DB_NAME = "pas_jn"
+DB_NAME = "pas_forHistory"
 
 DATABASE_URL = f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}?charset=utf8mb4"
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
